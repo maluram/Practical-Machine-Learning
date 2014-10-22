@@ -1,0 +1,119 @@
+---
+title: "PML_Project"
+author: "Maluram Sharma"
+date: "Wednesday, October 22, 2014"
+output: html_document
+---
+# Practical Machine Learning Course Project
+========================================================
+
+## Synopsis: 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal of this project is to predict the manner of performing unilateral dumbbell biceps curls based on data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The 5 possible methods include -
+* A: exactly according to the specification 
+* B: throwing the elbows to the front
+* C: lifting the dumbbell only halfway 
+* D: lowering the dumbbell only halfway
+* E: throwing the hips to the front
+
+#### Load libraries and setup working directory
+
+```{r prep, echo = F, message = F}
+library(ggplot2)
+library(caret)
+library(randomForest)
+setwd("C:/Coursera/PracticalMachineLearning")
+#load("project.Rdata")
+```
+#### Reading the data provided for the project
+```{r}
+
+# Reading training and testing sets
+trainingRaw <- read.csv(file="pml-training.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+testingRaw <- read.csv(file="pml-testing.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+
+trainingRaw$classe <- as.factor(trainingRaw$classe)
+
+```
+#### Removing the NAs from data as these will not be useful in prediction
+After investigating all the variables of the sets, it's possible to see that there are a lot of values NA or useless or empty variables for the prediction. It's request to compute the prediction only on the accelerometers values of belt, forearm, arm and dumbell. So, the non-accelerometer measures are discard with the useless variables.
+
+```{r}
+#Removing NAs
+NAindex <- apply(trainingRaw,2,function(x) {sum(is.na(x))}) 
+trainingRaw <- trainingRaw[,which(NAindex == 0)]
+NAindex <- apply(testingRaw,2,function(x) {sum(is.na(x))}) 
+testingRaw <- testingRaw[,which(NAindex == 0)]
+
+```
+
+#### Preprocessing the data before using it for the training
+```{r}
+#Preprocess
+v <- which(lapply(trainingRaw, class) %in% "numeric")
+
+preObj <-preProcess(trainingRaw[,v],method=c('knnImpute', 'center', 'scale'))
+trainLess1 <- predict(preObj, trainingRaw[,v])
+trainLess1$classe <- trainingRaw$classe
+
+testLess1 <-predict(preObj,testingRaw[,v])
+
+
+```
+#### Removing the near zero variables
+Removing the variables with values near zero, that means that they have not so much meaning in the predictions
+```{r}
+
+
+# remove near zero values, if any
+nzv <- nearZeroVar(trainLess1,saveMetrics=TRUE)
+trainLess1 <- trainLess1[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(testLess1,saveMetrics=TRUE)
+testLess1 <- testLess1[,nzv$nzv==FALSE]
+```
+
+#### Creating the cross validation set
+The training set is divided in two parts, one for training and the other for cross validation
+```{r}
+
+# Create cross validation set
+set.seed(12031987)
+inTrain = createDataPartition(trainLess1$classe, p = 3/4, list=FALSE)
+training = trainLess1[inTrain,]
+crossValidation = trainLess1[-inTrain,]
+
+```
+#### Finally training the model using random forest
+Training the model with random forest due to its highly accuracy rate. Although we will loose the interpretability but it will give us hugh prediction accuracy.
+
+```{r}
+
+# Train model with random forest
+
+modFit <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE )
+
+```
+
+#### Estimating the training set accuracy, cross-validation set accuracy and testing set accuracy
+As can be seen from the training and validation set results that both insample and out-of sample prediction accuracy are high. Thus this model can be used for predticiton of test set. 
+
+```{r}
+
+# Training set accuracy
+trainingPred <- predict(modFit, training)
+confusionMatrix(trainingPred, training$classe)
+
+```
+```{r}
+# Cross validation set accuracy
+cvPred <- predict(modFit, crossValidation)
+confusionMatrix(cvPred, crossValidation$classe)
+
+#Predictions on the real testing set
+testingPred <- predict(modFit, testLess1)
+testingPred
+```
+
